@@ -99,6 +99,11 @@ def get_mangio_crepe_f0(x, f0_min, f0_max, p_len, sr, crepe_hop_length, model='f
     return np.nan_to_num(target)
 
 
+global rmvpe_loaded
+global model_rmvpe
+model_rmvpe = None
+rmvpe_loaded = False
+
 def pitch_extract(f0_method, x, f0_min, f0_max, p_len, time_step, sr, window, crepe_hop_length, filter_radius=3):
     f0s = []
     f0 = np.zeros(p_len)
@@ -146,19 +151,20 @@ def pitch_extract(f0_method, x, f0_min, f0_max, p_len, time_step, sr, window, cr
         elif method == "mangio-crepe tiny":
             f0 = get_mangio_crepe_f0(x, f0_min, f0_max, p_len, sr, crepe_hop_length, 'tiny')
         elif method == "rmvpe":
-            rmvpe_model_path = os.path.join('data', 'models', 'rmvpe')
-            rmvpe_model_file = os.path.join(rmvpe_model_path, 'rmvpe.pt')
-            if not os.path.isfile(rmvpe_model_file):
-                import huggingface_hub
-                rmvpe_model_file = huggingface_hub.hf_hub_download('lj1995/VoiceConversionWebUI', 'rmvpe.pt', local_dir=rmvpe_model_path, local_dir_use_symlinks=False)
-
-            from webui.modules.implementations.rvc.rmvpe import RMVPE
-            print("loading rmvpe model")
-            model_rmvpe = RMVPE(rmvpe_model_file, is_half=True, device=None)
-            f0 = model_rmvpe.infer_from_audio(x, thred=0.03)
-            del model_rmvpe
-            torch.cuda.empty_cache()
-            gc.collect()
+            if rmvpe_loaded == False:
+                rmvpe_model_path = os.path.join('data', 'models', 'rmvpe')
+                rmvpe_model_file = os.path.join(rmvpe_model_path, 'rmvpe.pt')
+                if not os.path.isfile(rmvpe_model_file):
+                    import huggingface_hub
+                    rmvpe_model_file = huggingface_hub.hf_hub_download('lj1995/VoiceConversionWebUI', 'rmvpe.pt', local_dir=rmvpe_model_path, local_dir_use_symlinks=False)
+                from webui.modules.implementations.rvc.rmvpe import RMVPE
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                model_rmvpe = RMVPE(rmvpe_model_file, is_half=False, device=device)
+                f0 = model_rmvpe.infer_from_audio(x, thred=0.03)
+                print("loaded RMVPE model")
+                rmvpe_loaded = True
+            else:
+                f0 = model_rmvpe.infer_from_audio(x, thred=0.03)
         f0s.append(f0)
 
     if not f0s:
